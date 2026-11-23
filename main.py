@@ -2,6 +2,7 @@
 """
 SmartEdge WhatsApp Assistant (Windows 7 / MS Office 2007 Edition)
 - Fully automated workflow: reads contacts from Excel, poster from POSTS/, and message from message.txt
+- Choice of sending mode: Both (Poster + Caption), Only Poster, Only Message, or Both Separate
 - Compatible with: Windows 7, Python 3.8.10, ChromeDriver 109, MS Office 2007 (.xlsx)
 """
 
@@ -49,7 +50,6 @@ DEFAULT_CONFIG = {
     "message_file": "message.txt",
     "posts_folder": "POSTS",
     "auto_send": True,
-    "attach_post": True,
     "min_delay_seconds": 25,
     "max_delay_seconds": 45,
     "batch_size": 15,
@@ -146,10 +146,8 @@ def format_phone_number(value):
             return ""
         value = int(value)
     digits = re.sub(r"\D", "", str(value).strip())
-    # Handle Indian mobile numbers starting with 0 (e.g. 09323130044)
     if len(digits) == 11 and digits.startswith("0"):
         digits = "91" + digits[1:]
-    # Handle standard 10 digit Indian numbers
     elif len(digits) == 10:
         digits = "91" + digits
     return digits if 10 <= len(digits) <= 15 else ""
@@ -230,10 +228,9 @@ def open_chat_for_contact(driver, name, phone):
     """
     Reliably opens the chat with recipient.
     Strategy 1: Direct URL navigation (web.whatsapp.com/send?phone=...)
-                Waits for chat composer. Only treats as invalid if an ACTUAL visible
-                modal popup dialog appears on screen (not false positive from page_source).
-    Strategy 2: If URL check fails, automatically falls back to searching the contact
-                in WhatsApp Web's search bar (handles contacts synced via Google Contacts).
+                Waits for chat composer. Only checks for real visible dialogs.
+    Strategy 2: Automatic fallback to searching contact in WhatsApp Web search bar
+                (handles contacts synced via Google Contacts).
     """
     url = "https://web.whatsapp.com/send?phone={}".format(phone)
     driver.get(url)
@@ -253,7 +250,6 @@ def open_chat_for_contact(driver, name, phone):
                     or "not on whatsapp" in dlg_text
                     or "url is invalid" in dlg_text
                 ):
-                    # Click OK button to dismiss the dialog
                     ok_btns = dlg.find_elements(By.XPATH, './/button')
                     if ok_btns:
                         try:
@@ -282,7 +278,6 @@ def open_chat_for_contact(driver, name, phone):
             s_box = search_boxes[0]
             s_box.click()
             time.sleep(0.3)
-            # Clear search
             s_box.send_keys(Keys.CONTROL, "a")
             s_box.send_keys(Keys.BACKSPACE)
             time.sleep(0.3)
@@ -292,7 +287,6 @@ def open_chat_for_contact(driver, name, phone):
             s_box.send_keys(search_query)
             time.sleep(2.5)
 
-            # Look for contact row in search results
             contact_rows = visible_elements(
                 driver,
                 By.XPATH,
@@ -327,134 +321,104 @@ def open_chat_for_contact(driver, name, phone):
     return False
 
 
-def locate_media_caption_editor(driver):
+def send_poster(driver, image_path, caption=""):
     """
-    Resilient locator for WhatsApp Web media preview caption editor.
-    Works across older and newer WhatsApp Web Lexical rich-text implementations.
+    Attaches image via WhatsApp Web's Attach (+) menu, inserts caption in the preview dialog,
+    and sends the post.
     """
-    # 1. Check active focused element
-    try:
-        active = driver.switch_to.active_element
-        if active and is_visible(active) and active.get_attribute("contenteditable") == "true":
-            return active
-    except Exception:
-        pass
+    if not image_path or not image_path.is_file():
+        raise AutomationError("Image file not found: {}".format(image_path))
 
-    # 2. Resilient selectors inside preview dialog
-    selectors = [
-        '//div[@role="dialog"]//div[@contenteditable="true"]',
-        '//div[@data-lexical-editor="true" and not(ancestor::footer)]',
-        '//div[@contenteditable="true" and contains(translate(@aria-placeholder,"CAPTION","caption"),"caption")]',
-        '//div[@contenteditable="true" and contains(translate(@data-placeholder,"CAPTION","caption"),"caption")]',
-        '//div[@contenteditable="true" and @data-tab="10" and not(ancestor::footer)]',
-        '//*[@contenteditable="true" and not(ancestor::footer) and not(ancestor::*[@id="side"])]',
-    ]
-    for xpath in selectors:
-        matches = visible_elements(driver, By.XPATH, xpath)
-        if matches:
-            return matches[-1]
-    return None
-
-
-def locate_media_send_button(driver):
-    """Find the Send button inside media preview dialog."""
-    queries = [
-        '//div[@role="dialog"]//span[@data-icon="send"]/ancestor::*[self::button or @role="button"][1]',
-        '//span[@data-icon="send"]/ancestor::*[self::button or @role="button"][1][not(ancestor::footer)]',
-        '//button[@aria-label="Send" and not(ancestor::footer)]',
-        '//*[@role="button" and @aria-label="Send" and not(ancestor::footer)]',
-        '//div[@data-testid="send" and not(ancestor::footer)]',
-    ]
-    for xpath in queries:
-        buttons = visible_elements(driver, By.XPATH, xpath)
-        if buttons:
-            return buttons[0]
-    return None
-
-
-def send_media_with_caption(driver, image_path, message_text, auto_send=True):
-    """
-    Uploads media image and inserts caption into WhatsApp Web preview.
-    Fixes the 'Timed out waiting for unambiguous image caption field' error.
-    """
     count_before = outgoing_message_count(driver)
 
-    # Step 1: Open Attach menu if file input is not directly available
+    # Step 1: Click the Attach (+) button in chat footer
+    attach_btns = visible_elements(
+        driver,
+        By.XPATH,
+        '//div[@id="main"]//footer//*[@data-icon="plus"]/ancestor::*[self::button or @role="button"][1] | '
+        '//div[@id="main"]//footer//*[@title="Attach" or @aria-label="Attach"] | '
+        '//div[@id="main"]//footer//span[@data-icon="plus"]'
+    )
+    if not attach_btns:
+        raise AutomationError("Attach (+) button not found in chat footer")
+
+    try:
+        attach_btns[0].click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", attach_btns[0])
+
+    time.sleep(1.0)
+
+    # Step 2: Locate the Photos & Videos file input
     file_inputs = [
         e for e in driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]') if e.is_enabled()
     ]
     if not file_inputs:
-        attach_btns = visible_elements(
-            driver,
-            By.XPATH,
-            '//div[@id="main"]//footer//*[@title="Attach" or @aria-label="Attach"] | '
-            '//div[@id="main"]//footer//*[@data-icon="plus"]/ancestor::*[self::button or @role="button"][1]',
-        )
-        if attach_btns:
-            try:
-                attach_btns[0].click()
-                time.sleep(1.0)
-            except Exception:
-                pass
-            file_inputs = [
-                e for e in driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]') if e.is_enabled()
-            ]
+        time.sleep(1.0)
+        file_inputs = [
+            e for e in driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]') if e.is_enabled()
+        ]
 
     if not file_inputs:
-        raise AutomationError("Could not locate WhatsApp Web file upload input")
+        raise AutomationError("Could not find file upload input after clicking Attach (+)")
 
-    # Step 2: Send file path to input element
     image_inputs = [
         e for e in file_inputs if "image" in (e.get_attribute("accept") or "").lower()
     ]
     target_input = image_inputs[0] if image_inputs else file_inputs[0]
+
+    # Step 3: Send file path to trigger WhatsApp media preview modal
     target_input.send_keys(str(image_path.resolve()))
-    print("   [+] Uploading image, waiting for preview dialog...")
+    print("   [+] Poster attached via (+) menu. Waiting for preview dialog...")
 
-    # Step 3: Wait for caption box using resilient locator
-    caption_box = wait_until(
-        driver,
-        lambda d: locate_media_caption_editor(d),
-        timeout=35,
-        label="media preview caption box",
+    # Step 4: Wait for the media preview modal (div[role="dialog"])
+    def get_preview_dialog(d):
+        dialogs = visible_elements(d, By.XPATH, '//div[@role="dialog"]')
+        for dlg in dialogs:
+            if dlg.find_elements(By.XPATH, './/*[@data-icon="send"] | .//img | .//canvas | .//*[@contenteditable="true"]'):
+                return dlg
+        return False
+
+    preview_dialog = wait_until(driver, get_preview_dialog, timeout=35, label="media preview dialog")
+
+    # Step 5: Insert caption inside the preview dialog if provided
+    if caption:
+        caption_editors = preview_dialog.find_elements(By.XPATH, './/div[@contenteditable="true"]')
+        if caption_editors:
+            c_box = caption_editors[0]
+            try:
+                c_box.click()
+            except Exception:
+                pass
+            time.sleep(0.3)
+            pyperclip.copy(caption)
+            c_box.send_keys(Keys.CONTROL, "v")
+            time.sleep(0.8)
+            print("   [+] Caption inserted into preview dialog")
+
+    # Step 6: Click Send inside preview dialog
+    send_btns = preview_dialog.find_elements(
+        By.XPATH,
+        './/*[@data-icon="send"]/ancestor::*[self::button or @role="button"][1] | .//button[@aria-label="Send"]'
     )
-
-    try:
-        caption_box.click()
-    except Exception:
-        pass
-    time.sleep(0.5)
-
-    # Step 4: Paste caption text via Windows clipboard
-    pyperclip.copy(message_text)
-    caption_box.send_keys(Keys.CONTROL, "v")
-    time.sleep(1.0)
-    print("   [+] Caption inserted into preview")
-
-    if not auto_send:
-        return "Preview OK"
-
-    # Step 5: Send the message
-    send_btn = locate_media_send_button(driver)
-    if send_btn:
+    if send_btns:
         try:
-            send_btn.click()
+            send_btns[0].click()
         except Exception:
-            send_btn.send_keys(Keys.ENTER)
+            driver.execute_script("arguments[0].click();", send_btns[0])
     else:
-        # Fallback: hit Enter directly inside caption box
-        caption_box.send_keys(Keys.ENTER)
+        # Fallback: Enter key inside caption editor
+        caption_editors = preview_dialog.find_elements(By.XPATH, './/div[@contenteditable="true"]')
+        if caption_editors:
+            caption_editors[0].send_keys(Keys.ENTER)
 
-    print("   [+] Send clicked. Verifying outgoing delivery...")
+    print("   [+] Send clicked on poster. Waiting for delivery...")
 
-    # Step 6: Wait for preview dialog to close or outgoing message bubble
+    # Step 7: Wait for preview dialog to close
     start_time = time.time()
     confirmed = False
     while time.time() - start_time < 30:
-        if outgoing_message_count(driver) > count_before:
-            confirmed = True
-            break
-        if not is_visible(caption_box):
+        if not is_visible(preview_dialog) or outgoing_message_count(driver) > count_before:
             confirmed = True
             break
         time.sleep(0.8)
@@ -462,26 +426,45 @@ def send_media_with_caption(driver, image_path, message_text, auto_send=True):
     return "Sent" if confirmed else "Review"
 
 
-def send_text_only(driver, message_text, auto_send=True):
-    """Fallback text-only sender."""
+def send_text_only(driver, message_text):
+    """Sends text-only message via chat composer in footer."""
+    count_before = outgoing_message_count(driver)
     chat_box_matches = visible_elements(
         driver, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'
     )
     if not chat_box_matches:
-        raise AutomationError("Chat input box not found")
+        raise AutomationError("Chat input box not found in footer")
 
     box = chat_box_matches[0]
     box.click()
+    time.sleep(0.3)
     pyperclip.copy(message_text)
     box.send_keys(Keys.CONTROL, "v")
     time.sleep(0.8)
 
-    if not auto_send:
-        return "Preview OK"
+    send_btns = visible_elements(
+        driver,
+        By.XPATH,
+        '//div[@id="main"]//footer//*[@data-icon="send"]/ancestor::*[self::button or @role="button"][1]'
+    )
+    if send_btns:
+        try:
+            send_btns[0].click()
+        except Exception:
+            box.send_keys(Keys.ENTER)
+    else:
+        box.send_keys(Keys.ENTER)
 
-    box.send_keys(Keys.ENTER)
-    time.sleep(1.5)
-    return "Sent"
+    print("   [+] Message sent. Waiting for delivery...")
+    start_time = time.time()
+    confirmed = False
+    while time.time() - start_time < 20:
+        if outgoing_message_count(driver) > count_before:
+            confirmed = True
+            break
+        time.sleep(0.8)
+
+    return "Sent" if confirmed else "Review"
 
 
 def set_excel_status(wb, ws, row_idx, status, notes=""):
@@ -517,6 +500,27 @@ def main():
     config = load_config()
     template = load_message_template()
 
+    # Step: User Choice of what to send
+    print("\nWHAT WOULD YOU LIKE TO SEND TODAY?")
+    print("  1 = Both (Poster with Message caption) [RECOMMENDED]")
+    print("  2 = Only Poster (Image only, no text)")
+    print("  3 = Only Message (Text from message.txt only)")
+    print("  4 = Both Separate (Poster first, then Message right after)")
+    print("-" * 65)
+    choice = input("Enter choice (1, 2, 3, or 4) [Press Enter for 1]: ").strip()
+    if choice == "2":
+        send_mode = "poster_only"
+        print("[*] Selected: ONLY POSTER")
+    elif choice == "3":
+        send_mode = "message_only"
+        print("[*] Selected: ONLY MESSAGE")
+    elif choice == "4":
+        send_mode = "both_separate"
+        print("[*] Selected: BOTH SEPARATE (Poster, then Message)")
+    else:
+        send_mode = "both_caption"
+        print("[*] Selected: BOTH (Poster with Caption)")
+
     print("[*] Message template loaded from: {}".format(MESSAGE_FILE.name))
     print("[*] Excel file: {}".format(EXCEL_FILE.name))
 
@@ -524,12 +528,16 @@ def main():
         sys.exit("[ERROR] Excel file not found: {}".format(EXCEL_FILE))
 
     post_image = None
-    if config.get("attach_post", True):
+    if send_mode in ("both_caption", "poster_only", "both_separate"):
         post_image = get_post_image(POSTS_DIR)
         if post_image:
             print("[*] Selected poster image: {}".format(post_image.name))
         else:
-            print("[WARN] No image found in POSTS/ folder. Will send text only.")
+            if send_mode == "poster_only":
+                sys.exit("[ERROR] No image found in POSTS/ folder. Add an image and retry.")
+            else:
+                print("[WARN] No image found in POSTS/ folder. Falling back to message only.")
+                send_mode = "message_only"
 
     wb = openpyxl.load_workbook(str(EXCEL_FILE))
     ws = wb.active
@@ -578,7 +586,7 @@ def main():
     batch_size = int(config.get("batch_size", 15))
     batch_pause_min = int(config.get("batch_pause_minutes", 5))
 
-    print("[*] Mode: {}".format("Fully Automated" if auto_send else "Manual Review"))
+    print("[*] Mode: Fully Automated")
     print("[*] Delay between messages: {}s - {}s".format(min_delay, max_delay))
     print("[*] Batch cooling: pause {} min every {} messages".format(batch_pause_min, batch_size))
     print("-" * 65)
@@ -590,7 +598,6 @@ def main():
         driver.get("https://web.whatsapp.com")
         print("\n[!] Scan QR code if not already logged in...")
 
-        # Wait for chat list to load
         wait_until(
             driver,
             lambda d: visible_elements(d, By.CSS_SELECTOR, "#side")
@@ -616,36 +623,32 @@ def main():
                     set_excel_status(wb, ws, row_idx, "Failed", "Could not open chat")
                     continue
 
-                # Send with media or text-only
-                if post_image and post_image.is_file():
-                    res = send_media_with_caption(driver, post_image, personalized_msg, auto_send=auto_send)
-                else:
-                    res = send_text_only(driver, personalized_msg, auto_send=auto_send)
+                # Execute chosen send mode
+                if send_mode == "poster_only":
+                    res = send_poster(driver, post_image, caption="")
 
-                if auto_send:
-                    set_excel_status(
-                        wb,
-                        ws,
-                        row_idx,
-                        res,
-                        "Delivered successfully" if res == "Sent" else "Verify in WhatsApp",
-                    )
+                elif send_mode == "message_only":
+                    res = send_text_only(driver, personalized_msg)
+
+                elif send_mode == "both_separate":
+                    res = send_poster(driver, post_image, caption="")
                     if res == "Sent":
-                        sent_count += 1
-                        print("   [✓] Message sent successfully to {}!".format(name))
-                else:
-                    print("\n   [MANUAL REVIEW] Message prepared. Click Send in WhatsApp Web.")
-                    choice = input("   Enter S=Sent, R=Review, K=Skip, Q=Quit: ").strip().lower()
-                    if choice == "s":
-                        set_excel_status(wb, ws, row_idx, "Sent", "User confirmed send")
-                        sent_count += 1
-                    elif choice == "k":
-                        set_excel_status(wb, ws, row_idx, "Skipped", "Skipped by user")
-                    elif choice == "q":
-                        set_excel_status(wb, ws, row_idx, "Review", "Stopped by user")
-                        break
-                    else:
-                        set_excel_status(wb, ws, row_idx, "Review", "Marked for review")
+                        time.sleep(2.0)
+                        res = send_text_only(driver, personalized_msg)
+
+                else:  # both_caption
+                    res = send_poster(driver, post_image, caption=personalized_msg)
+
+                set_excel_status(
+                    wb,
+                    ws,
+                    row_idx,
+                    res,
+                    "Delivered successfully" if res == "Sent" else "Verify in WhatsApp",
+                )
+                if res == "Sent":
+                    sent_count += 1
+                    print("   [✓] Successfully sent to {}!".format(name))
 
             except Exception as exc:
                 capture_debug_screenshot(driver, row_idx, "error")
