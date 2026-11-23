@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+whatsapp_chrome_profile/
+whatsapp_debug/

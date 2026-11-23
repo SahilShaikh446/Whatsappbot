@@ -1,0 +1,13 @@
+{
+  "excel_file": "students_contacts.xlsx",
+  "message_file": "message.txt",
+  "posts_folder": "POSTS",
+  "auto_send": true,
+  "attach_post": true,
+  "min_delay_seconds": 25,
+  "max_delay_seconds": 45,
+  "batch_size": 15,
+  "batch_pause_minutes": 5,
+  "require_opt_in": true,
+  "max_contacts_per_run": null
+}

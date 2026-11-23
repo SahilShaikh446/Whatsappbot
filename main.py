@@ -1,10 +1,15 @@
-# SmartEdge WhatsApp Assistant
-# Windows 7 legacy-compatible, manual-send workflow.
-# Opens opted-in contacts, prepares an image + caption, and waits for you
-# to manually press Send in WhatsApp Web. It does NOT auto-send or evade detection.
+# -*- coding: utf-8 -*-
+"""
+SmartEdge WhatsApp Assistant (Windows 7 / MS Office 2007 Edition)
+- Fully automated workflow: reads contacts from Excel, poster from POSTS/, and message from message.txt
+- Compatible with: Windows 7, Python 3.8.10, ChromeDriver 109, MS Office 2007 (.xlsx)
+"""
 
 from __future__ import print_function
 
+import json
+import os
+import random
 import re
 import sys
 import time
@@ -12,60 +17,125 @@ from datetime import datetime
 from pathlib import Path
 
 import openpyxl
-import pyperclip
 from openpyxl.styles import Font, PatternFill
+import pyperclip
 from selenium import webdriver
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
+    NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
     WebDriverException,
 )
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
+# Base paths
 BASE_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = BASE_DIR / "config.json"
 EXCEL_FILE = BASE_DIR / "students_contacts.xlsx"
+MESSAGE_FILE = BASE_DIR / "message.txt"
 POSTS_DIR = BASE_DIR / "POSTS"
 PROFILE_DIR = BASE_DIR / "whatsapp_chrome_profile"
 DEBUG_DIR = BASE_DIR / "whatsapp_debug"
-TIMEOUT = 30
-MAX_CONTACTS_PER_RUN = 10   # Set None to process all eligible contacts manually
-REQUIRE_OPT_IN = True
-DRY_RUN = False             # True = prepare preview only; no manual-send prompt
 
-MESSAGE_TEMPLATE = """Hi {Name}! 👋
+# Ensure debug directory exists
+DEBUG_DIR.mkdir(exist_ok=True)
 
-🎓 Degree complete, but still looking for a job?
+DEFAULT_CONFIG = {
+    "excel_file": "students_contacts.xlsx",
+    "message_file": "message.txt",
+    "posts_folder": "POSTS",
+    "auto_send": True,
+    "attach_post": True,
+    "min_delay_seconds": 25,
+    "max_delay_seconds": 45,
+    "batch_size": 15,
+    "batch_pause_minutes": 5,
+    "require_opt_in": True,
+    "max_contacts_per_run": None,
+}
 
-Build job-ready skills with SmartEdge Academy.
-
-✅ Python | Java | Data Analytics
-✅ AI & Automation | Full Stack | Digital Marketing
-✅ Practical training and real projects
-✅ Resume building and interview preparation
-✅ 100% Job Assistance (not a job guarantee)
-
-🎁 FREE Career Counselling!
-
-Reply YES if you would like details.
-
-🌐 academy.smartedgegroup.in
-📞 9820624436
-📍 Bhiwandi"""
-
-CHAT_BOX_XPATH = '//div[@id="main"]//footer//*[@contenteditable="true"]'
-ATTACH_XPATH = (
-    '//div[@id="main"]//footer//*[@title="Attach" or @aria-label="Attach"]'
-    ' | //div[@id="main"]//footer//*[@data-icon="plus"]'
-    '/ancestor::*[self::button or @role="button"][1]'
-)
-IMAGE_INPUT_CSS = 'input[type="file"][accept*="image"]'
 
 class AutomationError(RuntimeError):
     pass
 
-def phone_number(value):
+
+def load_config():
+    """Load config.json or return defaults."""
+    if CONFIG_FILE.is_file():
+        try:
+            with open(str(CONFIG_FILE), "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                merged = dict(DEFAULT_CONFIG)
+                merged.update(cfg)
+                return merged
+        except Exception as e:
+            print("[WARN] Error loading config.json, using defaults: {}".format(e))
+    return dict(DEFAULT_CONFIG)
+
+
+def load_message_template():
+    """Load message template from message.txt (created if missing)."""
+    if not MESSAGE_FILE.is_file():
+        default_tpl = (
+            "Hi {Name}! 👋\n\n"
+            "🎓 Degree complete, but still looking for a job?\n\n"
+            "Build job-ready skills with SmartEdge Academy!\n\n"
+            "✅ Python | Java | Data Analytics\n"
+            "✅ AI & Automation | Full Stack | Digital Marketing\n"
+            "✅ Practical training and real projects\n"
+            "✅ Resume building and interview preparation\n"
+            "✅ 100% Job Assistance (not a job guarantee)\n\n"
+            "🎁 FREE Career Counselling!\n\n"
+            "Reply YES if you would like details.\n\n"
+            "🌐 academy.smartedgegroup.in\n"
+            "📞 9820624436\n"
+            "📍 Bhiwandi"
+        )
+        try:
+            with open(str(MESSAGE_FILE), "w", encoding="utf-8") as f:
+                f.write(default_tpl)
+            print("[INFO] Created default message.txt. You can edit this file in Notepad.")
+        except Exception:
+            pass
+        return default_tpl
+
+    try:
+        with open(str(MESSAGE_FILE), "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if content:
+                return content
+    except Exception as e:
+        print("[WARN] Could not read message.txt with UTF-8: {}".format(e))
+        try:
+            with open(str(MESSAGE_FILE), "r", encoding="latin-1") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+
+    return "Hi {Name}! 👋\n\nHope you are doing well!"
+
+
+def get_post_image(posts_dir):
+    """Find a valid image in POSTS/ folder."""
+    if not posts_dir.is_dir():
+        return None
+    valid_extensions = (".jpg", ".jpeg", ".png", ".webp")
+    images = sorted(
+        [p for p in posts_dir.iterdir() if p.is_file() and p.suffix.lower() in valid_extensions],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not images:
+        return None
+    # Pick the most recent image automatically
+    return images[0]
+
+
+def format_phone_number(value):
+    """Sanitize and format phone number for WhatsApp URL."""
     if value is None:
         return ""
     if isinstance(value, float):
@@ -75,76 +145,244 @@ def phone_number(value):
     digits = re.sub(r"\D", "", str(value).strip())
     if len(digits) == 10:
         digits = "91" + digits
-    return digits if len(digits) == 12 and digits.startswith("91") else ""
+    return digits if 10 <= len(digits) <= 15 else ""
 
-def choose_post():
-    images = sorted(
-        [p for p in POSTS_DIR.iterdir()
-         if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")],
-        key=lambda p: p.name.lower()
-    )
-    if not images:
-        raise AutomationError("No JPG, JPEG, PNG or WEBP files found in POSTS folder.")
-    print("\nAvailable posts:")
-    for i, path in enumerate(images, 1):
-        print("  {}. {}".format(i, path.name))
-    while True:
-        answer = input("Choose post number (or Q to quit): ").strip().lower()
-        if answer == "q":
-            return None
-        if answer.isdigit() and 1 <= int(answer) <= len(images):
-            return images[int(answer) - 1]
-        print("Invalid selection. Try again.")
-
-def get_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--user-data-dir=" + str(PROFILE_DIR))
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-notifications")
-    # Use a normal visible browser session. No stealth / anti-detection flags.
-    driver_path = BASE_DIR / "chromedriver.exe"
-    if driver_path.is_file():
-        return webdriver.Chrome(executable_path=str(driver_path), options=options)
-    # Selenium Manager may not work on Windows 7 / older Selenium.
-    # If this fails, put a matching chromedriver.exe beside this script.
-    return webdriver.Chrome(options=options)
 
 def is_visible(element):
+    """Safely check if an element is visible in the DOM."""
     try:
         return element.is_displayed() and element.size.get("width", 0) > 0
     except (StaleElementReferenceException, WebDriverException):
         return False
 
-def wait_until(driver, fn, timeout=TIMEOUT, label="UI element"):
+
+def wait_until(driver, condition_fn, timeout=30, label="element"):
+    """Wait for condition or raise AutomationError."""
     try:
-        return WebDriverWait(driver, timeout, poll_frequency=0.5).until(fn)
+        return WebDriverWait(driver, timeout, poll_frequency=0.4).until(condition_fn)
     except TimeoutException as exc:
         raise AutomationError("Timed out waiting for {}".format(label)) from exc
 
-def visible_matches(driver, by, selector):
-    return [e for e in driver.find_elements(by, selector) if is_visible(e)]
 
-def click(driver, element):
+def visible_elements(driver, by, selector):
+    """Return all visible elements matching selector."""
     try:
-        element.click()
-    except ElementClickInterceptedException:
-        raise AutomationError("The WhatsApp control was obstructed. Please clear the screen and retry.")
+        return [e for e in driver.find_elements(by, selector) if is_visible(e)]
+    except Exception:
+        return []
 
-def capture_failure(driver, row_idx, stage):
-    DEBUG_DIR.mkdir(exist_ok=True)
-    filename = DEBUG_DIR / "row_{}_{}_{}.png".format(
-        row_idx, stage, datetime.now().strftime("%Y%m%d_%H%M%S")
-    )
+
+def capture_debug_screenshot(driver, row_idx, stage):
+    """Capture failure screenshot for troubleshooting."""
     try:
+        filename = DEBUG_DIR / "row_{}_{}_{}.png".format(
+            row_idx, stage, datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         driver.save_screenshot(str(filename))
-        print("Screenshot saved:", filename)
-    except WebDriverException:
+        print("   [DEBUG] Screenshot saved to: {}".format(filename.name))
+    except Exception:
         pass
 
-def set_status(wb, ws, row_idx, status, notes=""):
+
+def get_driver():
+    """Initialize Selenium WebDriver with Windows 7 Chrome 109 support."""
+    options = webdriver.ChromeOptions()
+    options.add_argument("--user-data-dir=" + str(PROFILE_DIR))
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--ignore-certificate-errors")
+
+    # Anti-crash switches for low-spec Windows 7
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    driver_path = BASE_DIR / "chromedriver.exe"
+    if driver_path.is_file():
+        try:
+            from selenium.webdriver.chrome.service import Service
+            service = Service(executable_path=str(driver_path))
+            return webdriver.Chrome(service=service, options=options)
+        except Exception:
+            return webdriver.Chrome(executable_path=str(driver_path), options=options)
+
+    return webdriver.Chrome(options=options)
+
+
+def outgoing_message_count(driver):
+    """Count visible outgoing messages in the active chat."""
+    try:
+        return len(driver.find_elements(By.CSS_SELECTOR, "#main .message-out"))
+    except Exception:
+        return 0
+
+
+def locate_media_caption_editor(driver):
+    """
+    Resilient locator for WhatsApp Web media preview caption editor.
+    Works across older and newer WhatsApp Web Lexical rich-text implementations.
+    """
+    # 1. Check active focused element
+    try:
+        active = driver.switch_to.active_element
+        if active and is_visible(active) and active.get_attribute("contenteditable") == "true":
+            return active
+    except Exception:
+        pass
+
+    # 2. Resilient selectors inside preview dialog
+    selectors = [
+        '//div[@role="dialog"]//div[@contenteditable="true"]',
+        '//div[@data-lexical-editor="true" and not(ancestor::footer)]',
+        '//div[@contenteditable="true" and contains(translate(@aria-placeholder,"CAPTION","caption"),"caption")]',
+        '//div[@contenteditable="true" and contains(translate(@data-placeholder,"CAPTION","caption"),"caption")]',
+        '//div[@contenteditable="true" and @data-tab="10" and not(ancestor::footer)]',
+        '//*[@contenteditable="true" and not(ancestor::footer) and not(ancestor::*[@id="side"])]',
+    ]
+    for xpath in selectors:
+        matches = visible_elements(driver, By.XPATH, xpath)
+        if matches:
+            return matches[-1]
+    return None
+
+
+def locate_media_send_button(driver):
+    """Find the Send button inside media preview dialog."""
+    queries = [
+        '//div[@role="dialog"]//span[@data-icon="send"]/ancestor::*[self::button or @role="button"][1]',
+        '//span[@data-icon="send"]/ancestor::*[self::button or @role="button"][1][not(ancestor::footer)]',
+        '//button[@aria-label="Send" and not(ancestor::footer)]',
+        '//*[@role="button" and @aria-label="Send" and not(ancestor::footer)]',
+        '//div[@data-testid="send" and not(ancestor::footer)]',
+    ]
+    for xpath in queries:
+        buttons = visible_elements(driver, By.XPATH, xpath)
+        if buttons:
+            return buttons[0]
+    return None
+
+
+def send_media_with_caption(driver, image_path, message_text, auto_send=True):
+    """
+    Uploads media image and inserts caption into WhatsApp Web preview.
+    Fixes the 'Timed out waiting for unambiguous image caption field' error.
+    """
+    count_before = outgoing_message_count(driver)
+
+    # Step 1: Open Attach menu if file input is not directly available
+    file_inputs = [
+        e for e in driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]') if e.is_enabled()
+    ]
+    if not file_inputs:
+        attach_btns = visible_elements(
+            driver,
+            By.XPATH,
+            '//div[@id="main"]//footer//*[@title="Attach" or @aria-label="Attach"] | '
+            '//div[@id="main"]//footer//*[@data-icon="plus"]/ancestor::*[self::button or @role="button"][1]',
+        )
+        if attach_btns:
+            try:
+                attach_btns[0].click()
+                time.sleep(1.0)
+            except Exception:
+                pass
+            file_inputs = [
+                e for e in driver.find_elements(By.CSS_SELECTOR, 'input[type="file"]') if e.is_enabled()
+            ]
+
+    if not file_inputs:
+        raise AutomationError("Could not locate WhatsApp Web file upload input")
+
+    # Step 2: Send file path to input element
+    # Use image input if available, else first enabled input
+    image_inputs = [
+        e for e in file_inputs if "image" in (e.get_attribute("accept") or "").lower()
+    ]
+    target_input = image_inputs[0] if image_inputs else file_inputs[0]
+    target_input.send_keys(str(image_path.resolve()))
+    print("   [+] Uploading image, waiting for preview dialog...")
+
+    # Step 3: Wait for caption box using resilient locator
+    caption_box = wait_until(
+        driver,
+        lambda d: locate_media_caption_editor(d),
+        timeout=35,
+        label="media preview caption box",
+    )
+
+    try:
+        caption_box.click()
+    except Exception:
+        pass
+    time.sleep(0.5)
+
+    # Step 4: Paste caption text via Windows clipboard
+    pyperclip.copy(message_text)
+    caption_box.send_keys(Keys.CONTROL, "v")
+    time.sleep(1.0)
+    print("   [+] Caption inserted into preview")
+
+    if not auto_send:
+        return "Preview OK"
+
+    # Step 5: Send the message
+    send_btn = locate_media_send_button(driver)
+    if send_btn:
+        try:
+            send_btn.click()
+        except Exception:
+            send_btn.send_keys(Keys.ENTER)
+    else:
+        # Fallback: hit Enter directly inside caption box
+        caption_box.send_keys(Keys.ENTER)
+
+    print("   [+] Send clicked. Verifying outgoing delivery...")
+
+    # Step 6: Wait for preview dialog to close or outgoing message bubble
+    start_time = time.time()
+    confirmed = False
+    while time.time() - start_time < 30:
+        if outgoing_message_count(driver) > count_before:
+            confirmed = True
+            break
+        if not is_visible(caption_box):
+            confirmed = True
+            break
+        time.sleep(0.8)
+
+    return "Sent" if confirmed else "Review"
+
+
+def send_text_only(driver, message_text, auto_send=True):
+    """Fallback text-only sender."""
+    chat_box_matches = visible_elements(
+        driver, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'
+    )
+    if not chat_box_matches:
+        raise AutomationError("Chat input box not found")
+
+    box = chat_box_matches[0]
+    box.click()
+    pyperclip.copy(message_text)
+    box.send_keys(Keys.CONTROL, "v")
+    time.sleep(0.8)
+
+    if not auto_send:
+        return "Preview OK"
+
+    box.send_keys(Keys.ENTER)
+    time.sleep(1.5)
+    return "Sent"
+
+
+def set_excel_status(wb, ws, row_idx, status, notes=""):
+    """Update status, timestamp, and notes in MS Office 2007 Excel sheet."""
     ws.cell(row_idx, 3).value = status
     ws.cell(row_idx, 4).value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ws.cell(row_idx, 5).value = str(notes)[:300]
+    ws.cell(row_idx, 5).value = str(notes)[:250]
+
     palette = {
         "Sent": ("DCFCE7", "166534"),
         "Failed": ("FEE2E2", "991B1B"),
@@ -157,156 +395,186 @@ def set_status(wb, ws, row_idx, status, notes=""):
         cell = ws.cell(row_idx, 3)
         cell.fill = PatternFill(fill_type="solid", fgColor=bg)
         cell.font = Font(name="Calibri", size=10, bold=True, color=fg)
+
     try:
         wb.save(str(EXCEL_FILE))
-    except PermissionError as exc:
-        raise AutomationError(
-            "Close '{}' in Microsoft Excel before running.".format(EXCEL_FILE.name)
-        ) from exc
+    except PermissionError:
+        print("   [WARN] Could not save Excel file (is it open in Excel? Close it).")
 
-def require_media_input(driver):
-    inputs = [e for e in driver.find_elements(By.CSS_SELECTOR, IMAGE_INPUT_CSS) if e.is_enabled()]
-    if not inputs:
-        buttons = visible_matches(driver, By.XPATH, ATTACH_XPATH)
-        if not buttons:
-            raise AutomationError("WhatsApp Attach (+) control not found.")
-        click(driver, buttons[0])
-        inputs = wait_until(
-            driver,
-            lambda d: [e for e in d.find_elements(By.CSS_SELECTOR, IMAGE_INPUT_CSS) if e.is_enabled()],
-            timeout=12,
-            label="Photos & Videos file input",
-        )
-    return inputs[0]
-
-def locate_caption(driver):
-    xpath = (
-        '//*[@contenteditable="true" and not(ancestor::footer) '
-        'and not(ancestor::*[@id="side"])]'
-        '[contains(translate(@aria-label,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"caption") '
-        'or contains(translate(@aria-placeholder,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"caption") '
-        'or contains(translate(@data-placeholder,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"caption") '
-        'or contains(translate(@data-testid,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz"),"caption")]'
-    )
-    candidates = visible_matches(driver, By.XPATH, xpath)
-    if len(candidates) == 1:
-        return candidates[0]
-    # Do not guess if the preview caption field cannot be identified uniquely.
-    return None
-
-def prepare_image_caption(driver, image_path, message):
-    wait_until(driver, lambda d: visible_matches(d, By.XPATH, CHAT_BOX_XPATH),
-               timeout=45, label="chat composer")
-    media_input = require_media_input(driver)
-    media_input.send_keys(str(image_path.resolve()))
-    caption = wait_until(driver, lambda d: locate_caption(d), timeout=35,
-                         label="unambiguous image caption field")
-    caption.click()
-    pyperclip.copy(message)
-    caption.send_keys("\ue009", "v")  # CTRL+V
-    wait_until(
-        driver,
-        lambda d: message.splitlines()[0] in (caption.text or ""),
-        timeout=10,
-        label="caption text",
-    )
-    print("Image and caption prepared. Review them in WhatsApp Web.")
 
 def main():
+    print("=" * 65)
+    print(" SMARTEDGE WHATSAPP ASSISTANT (WINDOWS 7 / EXCEL 2007)")
+    print("=" * 65)
+
+    config = load_config()
+    template = load_message_template()
+
+    print("[*] Message template loaded from: {}".format(MESSAGE_FILE.name))
+    print("[*] Excel file: {}".format(EXCEL_FILE.name))
+
     if not EXCEL_FILE.is_file():
-        sys.exit("Excel file not found: {}".format(EXCEL_FILE))
-    post = choose_post()
-    if post is None:
-        print("Cancelled.")
-        return
+        sys.exit("[ERROR] Excel file not found: {}".format(EXCEL_FILE))
+
+    post_image = None
+    if config.get("attach_post", True):
+        post_image = get_post_image(POSTS_DIR)
+        if post_image:
+            print("[*] Selected poster image: {}".format(post_image.name))
+        else:
+            print("[WARN] No image found in POSTS/ folder. Will send text only.")
 
     wb = openpyxl.load_workbook(str(EXCEL_FILE))
     ws = wb.active
 
-    if ws.max_column < 6 or str(ws.cell(1, 6).value or "").strip().lower().replace(" ", "_") not in (
-        "opt_in", "opt-in", "consent"
-    ):
+    # Validate headers
+    headers = [str(ws.cell(1, col).value or "").strip().lower() for col in range(1, ws.max_column + 1)]
+    if ws.max_column < 6 or "opt_in" not in headers:
         ws.cell(1, 6).value = "Opt_In"
         wb.save(str(EXCEL_FILE))
-        wb.close()
-        sys.exit("Column F header set to Opt_In. Mark YES only for people who agreed to receive messages, close Excel, and run again.")
 
-    tasks, seen = [], set()
+    # Collect pending contacts
+    queued, seen = [], set()
     for row in range(2, ws.max_row + 1):
-        name = str(ws.cell(row, 1).value or "there").strip()
-        phone = phone_number(ws.cell(row, 2).value)
+        name = str(ws.cell(row, 1).value or "Student").strip()
+        phone = format_phone_number(ws.cell(row, 2).value)
         status = str(ws.cell(row, 3).value or "").strip().lower()
         opted_in = str(ws.cell(row, 6).value or "").strip().lower() in ("yes", "y", "true", "1")
-        if status in ("sent", "review", "preview ok"):
+
+        if status in ("sent", "preview ok"):
             continue
-        if REQUIRE_OPT_IN and not opted_in:
+        if config.get("require_opt_in", True) and not opted_in:
             continue
         if not phone:
-            set_status(wb, ws, row, "Failed", "Invalid Indian mobile number")
+            set_excel_status(wb, ws, row, "Failed", "Invalid phone number")
             continue
         if phone in seen:
-            set_status(wb, ws, row, "Review", "Duplicate number in workbook")
+            set_excel_status(wb, ws, row, "Review", "Duplicate number in Excel")
             continue
-        seen.add(phone)
-        tasks.append((row, name, phone))
 
-    if MAX_CONTACTS_PER_RUN is not None:
-        tasks = tasks[:MAX_CONTACTS_PER_RUN]
-    if not tasks:
-        print("No eligible contacts. Check Opt_In=Yes and status columns.")
+        seen.add(phone)
+        queued.append({"row": row, "name": name, "phone": phone})
+
+    max_limit = config.get("max_contacts_per_run")
+    if max_limit and isinstance(max_limit, int):
+        queued = queued[:max_limit]
+
+    print("[*] Eligible contacts queued: {}".format(len(queued)))
+    if not queued:
+        print("[*] No contacts to process. Check Excel Status or Opt_In column.")
         wb.close()
         return
 
-    print("\nSelected post:", post.name)
-    print("Eligible contacts:", len(tasks))
-    print("Manual-send mode: the script will NEVER click WhatsApp's Send button.")
+    auto_send = config.get("auto_send", True)
+    min_delay = int(config.get("min_delay_seconds", 25))
+    max_delay = int(config.get("max_delay_seconds", 45))
+    batch_size = int(config.get("batch_size", 15))
+    batch_pause_min = int(config.get("batch_pause_minutes", 5))
+
+    print("[*] Mode: {}".format("Fully Automated" if auto_send else "Manual Review"))
+    print("[*] Delay between messages: {}s - {}s".format(min_delay, max_delay))
+    print("[*] Batch cooling: pause {} min every {} messages".format(batch_pause_min, batch_size))
+    print("-" * 65)
+
     driver = None
+    sent_count = 0
     try:
         driver = get_driver()
         driver.get("https://web.whatsapp.com")
-        print("\nIf needed, scan the WhatsApp Web QR code.")
-        wait_until(driver, lambda d: visible_matches(d, By.CSS_SELECTOR, "#side")
-                   or visible_matches(d, By.CSS_SELECTOR, "#pane-side"),
-                   timeout=150, label="WhatsApp Web chat list")
-        print("WhatsApp Web is open.")
+        print("\n[!] Scan QR code if not already logged in...")
 
-        for index, (row, name, phone) in enumerate(tasks, 1):
-            print("\n[{}/{}] {} (+{})".format(index, len(tasks), name, phone))
+        # Wait for chat list to load
+        wait_until(
+            driver,
+            lambda d: visible_elements(d, By.CSS_SELECTOR, "#side")
+            or visible_elements(d, By.CSS_SELECTOR, "#pane-side"),
+            timeout=150,
+            label="WhatsApp Web login",
+        )
+        print("[OK] WhatsApp Web session active!\n")
+
+        for idx, contact in enumerate(queued, start=1):
+            row_idx = contact["row"]
+            name = contact["name"]
+            phone = contact["phone"]
+            personalized_msg = template.replace("{Name}", name).replace("{name}", name)
+
+            print("[{}/{}] Recipient: {} (+{})".format(idx, len(queued), name, phone))
+
             try:
                 driver.get("https://web.whatsapp.com/send?phone={}".format(phone))
-                wait_until(driver, lambda d: visible_matches(d, By.XPATH, CHAT_BOX_XPATH),
-                           timeout=60, label="recipient chat")
-                message = MESSAGE_TEMPLATE.format(Name=name)
-                prepare_image_caption(driver, post, message)
 
-                if DRY_RUN:
-                    set_status(wb, ws, row, "Preview OK", "Preview prepared; not sent")
-                    input("Press Enter for next contact...")
+                # Check if chat opens or number is invalid
+                def check_chat_state(d):
+                    if visible_elements(d, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'):
+                        return "ready"
+                    page_src = d.page_source.lower()
+                    if "phone number shared via url is invalid" in page_src or "not on whatsapp" in page_src:
+                        return "invalid"
+                    return False
+
+                state = wait_until(driver, check_chat_state, timeout=50, label="chat composer")
+                if state == "invalid":
+                    print("   [-] Phone number is not on WhatsApp.")
+                    set_excel_status(wb, ws, row_idx, "Failed", "Number not on WhatsApp")
                     continue
 
-                print("\nMANUAL ACTION REQUIRED:")
-                print("1. Check recipient, image and caption.")
-                print("2. Click Send yourself in WhatsApp Web if appropriate.")
-                print("3. Return here and record the result.")
-                choice = input("Enter S=you sent it, R=review/unsure, K=skip, Q=quit: ").strip().lower()
-                if choice == "s":
-                    set_status(wb, ws, row, "Sent", "User confirmed manual send; not independently verified")
-                elif choice == "r":
-                    set_status(wb, ws, row, "Review", "User marked for manual verification")
-                elif choice == "k":
-                    set_status(wb, ws, row, "Skipped", "Skipped by user")
-                elif choice == "q":
-                    set_status(wb, ws, row, "Review", "Stopped by user; check WhatsApp before retrying")
-                    break
+                # Send with media or text-only
+                if post_image and post_image.is_file():
+                    res = send_media_with_caption(driver, post_image, personalized_msg, auto_send=auto_send)
                 else:
-                    set_status(wb, ws, row, "Review", "Unrecognised response; verify chat manually")
-            except (AutomationError, WebDriverException, OSError) as exc:
-                capture_failure(driver, row, "error")
-                print("Error:", type(exc).__name__, str(exc))
-                set_status(wb, ws, row, "Failed", "{}: {}".format(type(exc).__name__, exc))
-                input("Press Enter to continue, or Ctrl+C to stop...")
+                    res = send_text_only(driver, personalized_msg, auto_send=auto_send)
+
+                if auto_send:
+                    set_excel_status(
+                        wb,
+                        ws,
+                        row_idx,
+                        res,
+                        "Delivered successfully" if res == "Sent" else "Verify in WhatsApp",
+                    )
+                    if res == "Sent":
+                        sent_count += 1
+                        print("   [✓] Message sent successfully to {}!".format(name))
+                else:
+                    print("\n   [MANUAL REVIEW] Message prepared. Click Send in WhatsApp Web.")
+                    choice = input("   Enter S=Sent, R=Review, K=Skip, Q=Quit: ").strip().lower()
+                    if choice == "s":
+                        set_excel_status(wb, ws, row_idx, "Sent", "User confirmed send")
+                        sent_count += 1
+                    elif choice == "k":
+                        set_excel_status(wb, ws, row_idx, "Skipped", "Skipped by user")
+                    elif choice == "q":
+                        set_excel_status(wb, ws, row_idx, "Review", "Stopped by user")
+                        break
+                    else:
+                        set_excel_status(wb, ws, row_idx, "Review", "Marked for review")
+
+            except Exception as exc:
+                capture_debug_screenshot(driver, row_idx, "error")
+                print("   [!] Error: {}".format(exc))
+                set_excel_status(wb, ws, row_idx, "Failed", str(exc)[:200])
+
+            # Batch cooling pause
+            if idx % batch_size == 0 and idx < len(queued):
+                print("\n[PAUSE] Batch limit reached ({} messages). Resting for {} minutes...".format(
+                    batch_size, batch_pause_min
+                ))
+                time.sleep(batch_pause_min * 60)
+
+            # Delay between individual messages
+            elif idx < len(queued):
+                delay = random.uniform(min_delay, max_delay)
+                print("   [⏳] Waiting {:.1f}s before next contact...".format(delay))
+                time.sleep(delay)
+
+        print("\n" + "=" * 65)
+        print("Completed! Total messages processed: {}/{}".format(sent_count, len(queued)))
+        print("Excel statuses updated in: {}".format(EXCEL_FILE.name))
+        print("=" * 65)
+
     except KeyboardInterrupt:
-        print("\nStopped by user. Workbook statuses have been saved.")
+        print("\n[!] Execution interrupted by user.")
     finally:
         if driver is not None:
             try:
@@ -314,6 +582,7 @@ def main():
             except Exception:
                 pass
         wb.close()
+
 
 if __name__ == "__main__":
     main()
