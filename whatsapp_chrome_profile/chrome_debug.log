@@ -1,0 +1,69 @@
+[4344:5736:1123/152231.278:WARNING:chrome_main_delegate.cc(607)] This is Chrome version 109.0.5414.120 (not a warning)
+[4344:5736:1123/152239.263:INFO:CONSOLE(422)] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yS/r/z-MusAQPGWi.js (422)
+[4344:5736:1123/152239.547:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Feature xr-spatial-tracking's parameters are ignored.", source:  (0)
+[4344:5736:1123/152239.548:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'attribution-reporting'.", source:  (0)
+[4344:5736:1123/152239.548:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'.", source:  (0)
+[4344:5736:1123/152239.548:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'compute-pressure'.", source:  (0)
+[4344:5736:1123/152239.548:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'interest-cohort'.", source:  (0)
+[4344:5736:1123/152239.548:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-issuance'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'shared-storage'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'shared-storage-select-url'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-redemption'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'unload'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'window-management'.", source:  (0)
+[4344:5736:1123/152239.549:INFO:CONSOLE(0)] "Document-Policy HTTP header: Unrecognized document policy feature name include-js-call-stacks-in-crash-reports.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152241.675:INFO:CONSOLE(85)] "ErrorUtils caught an error:
+
+[storage] storage bucket persistence denied (aquire-persistent-storage-denied)
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. [object Object]", source: https://static.whatsapp.net/rsrc.php/v4/yX/r/3hwuFXVyYLi.js (85)
+[4344:5736:1123/152244.080:INFO:CONSOLE(0)] "[.WebGL-0000048E0038BF00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152244.389:INFO:CONSOLE(128)] "The PerformanceObserver does not support buffered flag with the entryTypes argument.", source: https://static.whatsapp.net/rsrc.php/v4/yg/r/lOZBZRxIKHjqxJcaQf8I1DG_zNNwG-0Lpq27nd9u2vnM-tjXgtzPWBgOl_SO_pTYOtcxah70HA9xgWzOWT8zS3Grqsk6OO9kso4KxIYesRoq_3m8aT2y4I8_7OMYMRSPGU-1zJfTXQbgnGwe0qnL2dG90HrO1GHH6N2XQLm8XBb2aMVlso6pjbbzH2b.js (128)
+[4344:5736:1123/152250.244:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152255.876:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152258.555:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Feature xr-spatial-tracking's parameters are ignored.", source:  (0)
+[4344:5736:1123/152258.555:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'attribution-reporting'.", source:  (0)
+[4344:5736:1123/152258.555:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'compute-pressure'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'interest-cohort'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-issuance'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'shared-storage'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'shared-storage-select-url'.", source:  (0)
+[4344:5736:1123/152258.556:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-redemption'.", source:  (0)
+[4344:5736:1123/152258.557:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'unload'.", source:  (0)
+[4344:5736:1123/152258.557:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'window-management'.", source:  (0)
+[4344:5736:1123/152258.558:INFO:CONSOLE(0)] "Document-Policy HTTP header: Unrecognized document policy feature name include-js-call-stacks-in-crash-reports.", source: https://web.whatsapp.com/send?phone=919323130044 (0)
+[4344:5736:1123/152300.459:INFO:CONSOLE(85)] "ErrorUtils caught an error:
+
+[storage] storage bucket persistence denied (aquire-persistent-storage-denied)
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. [object Object]", source: https://static.whatsapp.net/rsrc.php/v4/yX/r/3hwuFXVyYLi.js (85)
+[4344:5736:1123/152302.095:INFO:CONSOLE(0)] "[.WebGL-0000048E0B2A9400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels", source: https://web.whatsapp.com/send?phone=919323130044 (0)
+[4344:5736:1123/152302.365:INFO:CONSOLE(128)] "The PerformanceObserver does not support buffered flag with the entryTypes argument.", source: https://static.whatsapp.net/rsrc.php/v4/yg/r/lOZBZRxIKHjqxJcaQf8I1DG_zNNwG-0Lpq27nd9u2vnM-tjXgtzPWBgOl_SO_pTYOtcxah70HA9xgWzOWT8zS3Grqsk6OO9kso4KxIYesRoq_3m8aT2y4I8_7OMYMRSPGU-1zJfTXQbgnGwe0qnL2dG90HrO1GHH6N2XQLm8XBb2aMVlso6pjbbzH2b.js (128)
+[4344:4392:1123/152316.448:WARNING:page_discarding_helper.cc(126)] Urgently discarding multiple pages with target (kb): 0
+[4344:5736:1123/152317.712:INFO:CONSOLE(84)] "ErrorUtils caught an error:
+
+Failed to find a Haste-supplied config for the QPL event identified by token `106`.
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. [object Object]", source: https://static.whatsapp.net/rsrc.php/v4/yr/r/p45sXdWQdYh.js (84)
+[4344:5736:1123/152321.386:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152326.344:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152330.991:INFO:CONSOLE(422)] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yS/r/z-MusAQPGWi.js (422)
+[4344:5736:1123/152336.040:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Feature xr-spatial-tracking's parameters are ignored.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'attribution-reporting'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'compute-pressure'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'interest-cohort'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-issuance'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'shared-storage'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'shared-storage-select-url'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-redemption'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'unload'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'window-management'.", source:  (0)
+[4344:5736:1123/152336.041:INFO:CONSOLE(0)] "Document-Policy HTTP header: Unrecognized document policy feature name include-js-call-stacks-in-crash-reports.", source: https://webtp.whatsapp.net/pdf-viewer/?locale=en_GB (0)
+[4344:5736:1123/152336.043:INFO:CONSOLE(1)] "Refused to load the image 'https://static.whatsapp.net/rsrc.php/yd/r/PfkSLByWV8O.webp' because it violates the following Content Security Policy directive: "img-src 'self' blob:".
+", source: https://webtp.whatsapp.net/pdf-viewer/?locale=en_GB (1)
+[4344:5736:1123/152336.043:INFO:CONSOLE(1)] "Refused to load the image 'https://static.whatsapp.net/rsrc.php/yI/r/EoOh62-jiPS.webp' because it violates the following Content Security Policy directive: "img-src 'self' blob:".
+", source: https://webtp.whatsapp.net/pdf-viewer/?locale=en_GB (1)
+[4344:5736:1123/152340.095:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
+[4344:5736:1123/152346.936:INFO:CONSOLE(0)] "The resource https://static.whatsapp.net/rsrc.php/v4/yi/r/4F58dmICRp8-URzHDaG082qJq3Nd3DdIHUr7856EE3XAI4tgWrDptJwTCBLRl8MTwEOl_SO_pTYOtQlMiPJ4vsm9rzpZMvAFSZpsMMPFaGXxJE-0pzyvWAKESbYzTker9knkCj-8sFaTauFCwamb14RsoK.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally.", source: https://web.whatsapp.com/ (0)
