@@ -40,8 +40,9 @@ POSTS_DIR = BASE_DIR / "POSTS"
 PROFILE_DIR = BASE_DIR / "whatsapp_chrome_profile"
 DEBUG_DIR = BASE_DIR / "whatsapp_debug"
 
-# Ensure debug directory exists
+# Ensure directories exist
 DEBUG_DIR.mkdir(exist_ok=True)
+POSTS_DIR.mkdir(exist_ok=True)
 
 DEFAULT_CONFIG = {
     "excel_file": "students_contacts.xlsx",
@@ -130,12 +131,14 @@ def get_post_image(posts_dir):
     )
     if not images:
         return None
-    # Pick the most recent image automatically
     return images[0]
 
 
 def format_phone_number(value):
-    """Sanitize and format phone number for WhatsApp URL."""
+    """
+    Sanitize and format phone number for WhatsApp.
+    Handles 10 digits, 11 digits (with leading 0), or international with country code.
+    """
     if value is None:
         return ""
     if isinstance(value, float):
@@ -143,7 +146,11 @@ def format_phone_number(value):
             return ""
         value = int(value)
     digits = re.sub(r"\D", "", str(value).strip())
-    if len(digits) == 10:
+    # Handle Indian mobile numbers starting with 0 (e.g. 09323130044)
+    if len(digits) == 11 and digits.startswith("0"):
+        digits = "91" + digits[1:]
+    # Handle standard 10 digit Indian numbers
+    elif len(digits) == 10:
         digits = "91" + digits
     return digits if 10 <= len(digits) <= 15 else ""
 
@@ -159,7 +166,7 @@ def is_visible(element):
 def wait_until(driver, condition_fn, timeout=30, label="element"):
     """Wait for condition or raise AutomationError."""
     try:
-        return WebDriverWait(driver, timeout, poll_frequency=0.4).until(condition_fn)
+        return WebDriverWait(driver, timeout, poll_frequency=0.5).until(condition_fn)
     except TimeoutException as exc:
         raise AutomationError("Timed out waiting for {}".format(label)) from exc
 
@@ -217,6 +224,107 @@ def outgoing_message_count(driver):
         return len(driver.find_elements(By.CSS_SELECTOR, "#main .message-out"))
     except Exception:
         return 0
+
+
+def open_chat_for_contact(driver, name, phone):
+    """
+    Reliably opens the chat with recipient.
+    Strategy 1: Direct URL navigation (web.whatsapp.com/send?phone=...)
+                Waits for chat composer. Only treats as invalid if an ACTUAL visible
+                modal popup dialog appears on screen (not false positive from page_source).
+    Strategy 2: If URL check fails, automatically falls back to searching the contact
+                in WhatsApp Web's search bar (handles contacts synced via Google Contacts).
+    """
+    url = "https://web.whatsapp.com/send?phone={}".format(phone)
+    driver.get(url)
+
+    def check_chat_state(d):
+        # 1. Chat composer is ready!
+        if visible_elements(d, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'):
+            return "ready"
+
+        # 2. Check ONLY for an ACTUAL visible modal popup dialog on screen
+        dialogs = visible_elements(d, By.XPATH, '//div[@role="dialog"]')
+        for dlg in dialogs:
+            try:
+                dlg_text = dlg.text.lower()
+                if (
+                    "phone number shared via url is invalid" in dlg_text
+                    or "not on whatsapp" in dlg_text
+                    or "url is invalid" in dlg_text
+                ):
+                    # Click OK button to dismiss the dialog
+                    ok_btns = dlg.find_elements(By.XPATH, './/button')
+                    if ok_btns:
+                        try:
+                            ok_btns[0].click()
+                        except Exception:
+                            pass
+                    return "invalid_dialog"
+            except Exception:
+                pass
+        return False
+
+    try:
+        state = wait_until(driver, check_chat_state, timeout=35, label="chat composer")
+        if state == "ready":
+            return True
+    except AutomationError:
+        pass
+
+    # Strategy 2: Search via sidebar (especially for Google Contacts or URL restriction)
+    print("   [i] Trying contact search in WhatsApp sidebar...")
+    try:
+        search_boxes = visible_elements(
+            driver, By.XPATH, '//div[@id="side"]//div[@contenteditable="true"]'
+        )
+        if search_boxes:
+            s_box = search_boxes[0]
+            s_box.click()
+            time.sleep(0.3)
+            # Clear search
+            s_box.send_keys(Keys.CONTROL, "a")
+            s_box.send_keys(Keys.BACKSPACE)
+            time.sleep(0.3)
+
+            # Try last 10 digits
+            search_query = phone[-10:] if len(phone) >= 10 else phone
+            s_box.send_keys(search_query)
+            time.sleep(2.5)
+
+            # Look for contact row in search results
+            contact_rows = visible_elements(
+                driver,
+                By.XPATH,
+                '//div[@id="pane-side"]//div[@role="listitem"] | //div[@id="pane-side"]//div[@role="row"]'
+            )
+            if contact_rows:
+                contact_rows[0].click()
+                time.sleep(1.5)
+                if visible_elements(driver, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'):
+                    return True
+
+            # If not found by phone, try searching by Name
+            if name and name.lower() not in ("student", "there", "customer", ""):
+                s_box.send_keys(Keys.CONTROL, "a")
+                s_box.send_keys(Keys.BACKSPACE)
+                time.sleep(0.3)
+                s_box.send_keys(name)
+                time.sleep(2.5)
+                contact_rows = visible_elements(
+                    driver,
+                    By.XPATH,
+                    '//div[@id="pane-side"]//div[@role="listitem"] | //div[@id="pane-side"]//div[@role="row"]'
+                )
+                if contact_rows:
+                    contact_rows[0].click()
+                    time.sleep(1.5)
+                    if visible_elements(driver, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'):
+                        return True
+    except Exception as e:
+        print("   [DEBUG] Sidebar search fallback error: {}".format(e))
+
+    return False
 
 
 def locate_media_caption_editor(driver):
@@ -296,7 +404,6 @@ def send_media_with_caption(driver, image_path, message_text, auto_send=True):
         raise AutomationError("Could not locate WhatsApp Web file upload input")
 
     # Step 2: Send file path to input element
-    # Use image input if available, else first enabled input
     image_inputs = [
         e for e in file_inputs if "image" in (e.get_attribute("accept") or "").lower()
     ]
@@ -502,21 +609,11 @@ def main():
             print("[{}/{}] Recipient: {} (+{})".format(idx, len(queued), name, phone))
 
             try:
-                driver.get("https://web.whatsapp.com/send?phone={}".format(phone))
-
-                # Check if chat opens or number is invalid
-                def check_chat_state(d):
-                    if visible_elements(d, By.XPATH, '//div[@id="main"]//footer//*[@contenteditable="true"]'):
-                        return "ready"
-                    page_src = d.page_source.lower()
-                    if "phone number shared via url is invalid" in page_src or "not on whatsapp" in page_src:
-                        return "invalid"
-                    return False
-
-                state = wait_until(driver, check_chat_state, timeout=50, label="chat composer")
-                if state == "invalid":
-                    print("   [-] Phone number is not on WhatsApp.")
-                    set_excel_status(wb, ws, row_idx, "Failed", "Number not on WhatsApp")
+                chat_opened = open_chat_for_contact(driver, name, phone)
+                if not chat_opened:
+                    print("   [-] Could not open chat for +{} (number not found or restricted).".format(phone))
+                    capture_debug_screenshot(driver, row_idx, "chat_open_failed")
+                    set_excel_status(wb, ws, row_idx, "Failed", "Could not open chat")
                     continue
 
                 # Send with media or text-only
